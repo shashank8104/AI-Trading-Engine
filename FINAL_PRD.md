@@ -5,20 +5,20 @@ Build a real-time AI-powered decision-support system for NIFTY 50 options tradin
 Manual execution only.
 
 ## Core Features
-- Real-time data ingestion via Zerodha WebSocket
+- Real-time data ingestion via Angel One WebSocket
 - Candle engine (5m, 15m)
 - Feature engineering (market, sentiment, options)
 - ML models (XGBoost + LSTM ensemble)
 - Signal engine (confidence ≥ 0.7, strict agreement)
-- Dashboard (Streamlit)
+- Dashboard (FastAPI HTML)
 
 ## Tech Stack (LOCKED)
 - Python 3.10+
 - FastAPI (async)
 - PostgreSQL + SQLAlchemy
 - XGBoost + PyTorch
-- Zerodha Kite Connect (WebSocket)
-- Streamlit + Plotly
+- Angel One SmartAPI (WebSocket)
+- FastAPI HTML (Internal Dashboard)
 - AWS EC2 (Ubuntu)
 - Cron jobs
 - .env config

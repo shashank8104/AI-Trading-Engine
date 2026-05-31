@@ -23,7 +23,7 @@ numpy>=1.26.4
 ta>=0.11.0
 
 # Dashboard
-streamlit>=1.38.0
+
 plotly>=5.24.1
 
 # Config & Logging

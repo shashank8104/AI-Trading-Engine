@@ -1,7 +1,7 @@
 """
 FastAPI REST API routes.
 
-Endpoints serve data to the Streamlit dashboard and any other consumers.
+Endpoints serve data to the internal HTML dashboard and any other consumers.
 All read operations — no mutations through the API.
 """
 

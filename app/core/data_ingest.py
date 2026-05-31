@@ -1,5 +1,5 @@
 """
-Angel One SmartAPI data ingestion — replaces Zerodha KiteTicker.
+Angel One SmartAPI data ingestion.
 
 Design:
     SmartWebSocketV2 runs on its own thread (internally uses websocket-client).
@@ -9,8 +9,7 @@ Design:
     Every NFO_ATM_UPDATE_MINUTES, recalculates ATM strike and
     subscribes/unsubscribes +-NFO_STRIKE_RANGE option instruments.
 
-    The public interface is identical to the previous KiteTicker-based
-    DataIngestor so app/main.py requires zero changes.
+    The public interface seamlessly powers the data pipeline.
 
 Angel One exchange types:
     1 = NSE (index)
@@ -45,9 +44,6 @@ MODE_SNAP_QUOTE = 3
 class DataIngestor:
     """
     Angel One WebSocket data ingestor.
-
-    Identical public interface to the previous Kite-based ingestor.
-    Drop-in replacement — app/main.py is unchanged.
     """
 
     def __init__(self, loop: asyncio.AbstractEventLoop, tick_queue: asyncio.Queue):
