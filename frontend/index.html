@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>AI Trading Intelligence Live</title>
+    <style>
+        body { margin: 0; padding: 0; background-color: #0a0a1a; color: #ccd6f6; font-family: 'Inter', sans-serif; }
+        #chart-wrapper { position: relative; width: 100%; height: 55vh; border-bottom: 1px solid #1a1a2e; background-color: #0a0a1a; }
+        #chart-container { width: 100%; height: 100%; background-color: #0a0a1a; }
+        .dashboard-panel { display: flex; align-items: center; justify-content: space-between; padding: 15px 30px; border-bottom: 1px solid #1a1a2e; height: 70px; box-sizing: border-box; }
+        h2 { margin: 0; color: #fff; font-size: 20px;}
+        .metric { background: #16213e; padding: 10px 20px; border-radius: 8px; text-align: center; border: 1px solid rgba(255, 255, 255, 0.08); }
+        .metric-title { font-size: 11px; color: #8892b0; text-transform: uppercase; letter-spacing: 0.5px; }
+        .metric-value { font-size: 16px; font-weight: 700; margin-top: 4px; }
+        .bull { color: #00ff88; }
+        .bear { color: #ff4444; }
+        .neutral { color: #8892b0; }
+        .history-panel { margin: 20px 30px; padding: 20px; background: #16213e; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.08); }
+        .history-panel h3 { margin-top: 0; color: #fff; font-size: 16px; margin-bottom: 15px; }
+        table { width: 100%; border-collapse: collapse; text-align: left; }
+        th, td { padding: 12px; border-bottom: 1px solid #1a1a2e; font-size: 14px; }
+        th { color: #8892b0; font-weight: normal; text-transform: uppercase; font-size: 12px; }
+    </style>
+    <script src="https://unpkg.com/lightweight-charts@3.8.0/dist/lightweight-charts.standalone.production.js"></script>
+</head>
+<body>
+    <div class="dashboard-panel">
+        <div>
+            <h2 style="display: flex; align-items: center; gap: 10px;">
+                📊 NIFTY 50 Live Chart 
+                <button id="fs-btn" style="background:#16213e; border:1px solid rgba(255,255,255,0.1); color:#8892b0; border-radius:4px; cursor:pointer; padding:4px 8px; font-size:12px; font-weight:bold; transition: 0.2s;" onmouseover="this.style.color='#fff'" onmouseout="this.style.color='#8892b0'" title="Toggle Fullscreen">⛶ Fullscreen</button>
+            </h2>
+        </div>
+        <div style="display: flex; gap: 20px;">
+            <div class="metric">
+                <div class="metric-title">Active Signal</div>
+                <div class="metric-value" id="latest-signal"><span class="neutral">Waiting for signals...</span></div>
+            </div>
+            <div class="metric">
+                <div class="metric-title">Latest Prediction</div>
+                <div class="metric-value" id="latest-prediction"><span class="neutral">Compiling features...</span></div>
+            </div>
+        </div>
+    </div>
+    <div id="chart-wrapper">
+        <div id="chart-container"></div>
+    </div>
+    
+    <div class="history-panel">
+        <h3>📜 Historical Execution Log (Today)</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Time</th>
+                    <th>Direction</th>
+                    <th>Strategy</th>
+                    <th>Entry</th>
+                    <th>Target</th>
+                    <th>Stop Loss</th>
+                    <th>Confidence</th>
+                </tr>
+            </thead>
+            <tbody id="signal-history-body">
+                <tr><td colspan="7" style="text-align: center; color: #8892b0;">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        const chart = LightweightCharts.createChart(document.getElementById('chart-container'), {
+            layout: { background: { color: '#0a0a1a' }, textColor: '#8892b0' },
+            grid: { vertLines: { color: '#1a1a2e', style: 1 }, horzLines: { color: '#1a1a2e', style: 1 } },
+            crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+            timeScale: { 
+                timeVisible: true, 
+                secondsVisible: false,
+                rightOffset: 10,
+                barSpacing: 15
+            },
+            localization: {
+                priceFormatter: price => Math.round(price).toString()
+            }
+        });
+
+        chart.priceScale('right').applyOptions({
+            autoScale: true,
+            scaleMargins: { top: 0.1, bottom: 0.1 },
+            borderVisible: false
+        });
+
+        const chartContainer = document.getElementById('chart-container');
+        
+        // Auto-resize chart on window resize or fullscreen toggle
+        new ResizeObserver(entries => {
+            if (entries.length === 0 || entries[0].target !== chartContainer) return;
+            const newRect = entries[0].contentRect;
+            chart.applyOptions({ width: newRect.width, height: newRect.height });
+        }).observe(chartContainer);
+
+        // Fullscreen toggle logic
+        document.getElementById('fs-btn').addEventListener('click', () => {
+            if (!document.fullscreenElement) {
+                chartContainer.requestFullscreen().catch(err => {
+                    console.error("Error enabling fullscreen:", err);
+                });
+            } else {
+                document.exitFullscreen();
+            }
+        });
+
+        const candleSeries = chart.addCandlestickSeries({
+            upColor: '#00ff88', downColor: '#ff4444', borderVisible: false,
+            wickUpColor: '#00ff88', wickDownColor: '#ff4444'
+        });
+
+        // Helper to convert naive string "YYYY-MM-DDTHH:MM:SS" into 
+        // a UTC timestamp that makes LightweightCharts display the exact same string
+        function toBusinessTime(isoString) {
+            const d = new Date(isoString);
+            return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes(), 0) / 1000;
+        }
+
+        async function init() {
+            try {
+                // Fetch Historical Candles (today)
+                const res = await fetch('/api/candles/5m?limit=288');
+                const history = await res.json();
+                
+                const formattedData = history.map(c => {
+                    return {
+                        time: toBusinessTime(c.timestamp),
+                        open: c.open, 
+                        high: c.high, 
+                        low: c.low, 
+                        close: c.close
+                    };
+                });
+                
+                // Sort ascending by time
+                formattedData.sort((a,b) => a.time - b.time);
+                
+                // Render chart
+                if (formattedData.length > 0) {
+                    candleSeries.setData(formattedData);
+                }
+
+                // Hydrate latest Prediction
+                function renderPrediction(data) {
+                    const el = document.getElementById('latest-prediction');
+                    if (data.message) {
+                        el.innerHTML = '<span class="neutral">Waiting for next interval...</span>';
+                        return;
+                    }
+                    const dir = data.ensemble_direction;
+                    const isBull = dir === 'BULLISH';
+                    const isBear = dir === 'BEARISH';
+                    let cssClass = 'neutral';
+                    let icon = '⚪';
+                    if (isBull) { cssClass = 'bull'; icon = '🟢'; }
+                    if (isBear) { cssClass = 'bear'; icon = '🔴'; }
+                    el.innerHTML = `${icon} <span class="${cssClass}">${dir}</span> (${(data.ensemble_confidence * 100).toFixed(1)}%)`;
+                }
+
+                // Hydrate latest Signal
+                function renderSignal(data) {
+                    const el = document.getElementById('latest-signal');
+                    if (!data || data.length === 0) return;
+                    const sig = Array.isArray(data) ? data[0] : data;
+                    const dir = sig.direction;
+                    const isBull = dir === 'BULLISH';
+                    const isBear = dir === 'BEARISH';
+                    let cssClass = 'neutral';
+                    let icon = '⚪';
+                    if (isBull) { cssClass = 'bull'; icon = '↗'; }
+                    if (isBear) { cssClass = 'bear'; icon = '↘'; }
+                    el.innerHTML = `<span class="${cssClass}">${icon} ${dir}</span> - Entry: ₹${sig.entry_price}`;
+                }
+
+                // Fetch current active state and history
+                const [predRes, sigRes, histRes] = await Promise.all([
+                    fetch('/api/predictions/latest'),
+                    fetch('/api/signals/latest'),
+                    fetch('/api/signals/history?limit=10')
+                ]);
+                const predData = await predRes.json();
+                const sigData = await sigRes.json();
+                const histData = await histRes.json();
+                
+                renderPrediction(predData);
+                renderSignal(sigData);
+
+                // Render Signal History
+                const tbody = document.getElementById('signal-history-body');
+                if (!histData || histData.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #8892b0;">No trades executed today. Market remains sideways or restricted.</td></tr>';
+                } else {
+                    tbody.innerHTML = histData.map(sig => {
+                        const isBull = sig.direction === 'BULLISH';
+                        const cssClass = isBull ? 'bull' : 'bear';
+                        const time = new Date(sig.timestamp).toLocaleTimeString();
+                        return `
+                        <tr>
+                            <td>${time}</td>
+                            <td class="${cssClass}"><strong>${sig.direction}</strong></td>
+                            <td>${sig.spread_type}</td>
+                            <td>₹${sig.entry_price}</td>
+                            <td style="color: #00ff88;">₹${sig.target}</td>
+                            <td style="color: #ff4444;">₹${sig.stop_loss}</td>
+                            <td>${(sig.confidence * 100).toFixed(1)}%</td>
+                        </tr>`;
+                    }).join('');
+                }
+
+                // Connect WebSocket
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = `${protocol}//${window.location.host}/api/ws/live`;
+                const ws = new WebSocket(wsUrl);
+
+                ws.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    
+                    if (data.type === 'CANDLE_UPDATE' || data.type === 'CANDLE_CLOSE') {
+                        const time = toBusinessTime(data.timestamp);
+                        candleSeries.update({
+                            time: time,
+                            open: data.open,
+                            high: data.high,
+                            low: data.low,
+                            close: data.close
+                        });
+                    }
+                    else if (data.type === 'PREDICTION') {
+                        renderPrediction(data);
+                    }
+                    else if (data.type === 'SIGNAL') {
+                        renderSignal(data);
+                        
+                        // Dynamically inject into History Table so it auto-updates without refresh
+                        const tbody = document.getElementById('signal-history-body');
+                        const isBull = data.direction === 'BULLISH';
+                        const cssClass = isBull ? 'bull' : 'bear';
+                        const time = new Date(data.timestamp).toLocaleTimeString();
+                        
+                        const newRow = `
+                        <tr>
+                            <td>${time}</td>
+                            <td class="${cssClass}"><strong>${data.direction}</strong></td>
+                            <td>${data.spread_type}</td>
+                            <td>₹${data.entry_price}</td>
+                            <td style="color: #00ff88;">₹${data.target}</td>
+                            <td style="color: #ff4444;">₹${data.stop_loss}</td>
+                            <td>${(data.confidence * 100).toFixed(1)}%</td>
+                        </tr>`;
+                        
+                        // Remove "No trades" placeholder if it exists
+                        if (tbody.innerHTML.includes('No trades executed')) {
+                            tbody.innerHTML = '';
+                        }
+                        
+                        tbody.insertAdjacentHTML('afterbegin', newRow);
+                    }
+                };
+
+                // Ping interval to keep connection alive
+                setInterval(() => {
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send("ping");
+                    }
+                }, 30000);
+
+            } catch (err) {
+                console.error("Initialization Failed:", err);
+            }
+        }
+
+        init();
+    </script>
+</body>
+</html>

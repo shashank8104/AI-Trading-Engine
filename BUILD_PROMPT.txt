@@ -1,0 +1,22 @@
+You are building a production-grade AI trading system.
+
+Follow the PRD strictly.
+
+Rules:
+- Use async FastAPI backend
+- Use Zerodha WebSocket for real-time data
+- Build candle engine (5m, 15m)
+- Use PostgreSQL with SQLAlchemy
+- Implement XGBoost + LSTM ensemble
+- Build Streamlit dashboard
+- Ensure low latency (<1s)
+
+Deliver:
+1. Clean modular codebase
+2. Proper folder structure
+3. Working pipeline (data → features → model → signal)
+4. Instructions to run locally + deploy
+
+Do not over-engineer.
+Do not introduce unnecessary tools.
+Focus on working real-time system.
