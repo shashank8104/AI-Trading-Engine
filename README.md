@@ -6,7 +6,7 @@ Real-time AI-powered decision-support system for NIFTY 50 options trading (sprea
 ## Architecture
 
 ```
-Zerodha WebSocket → Candle Engine (5m/15m) → Feature Engine → ML Ensemble → Signal Engine → Dashboard
+Angel One WebSocket → Candle Engine (5m/15m) → Feature Engine → ML Ensemble → Signal Engine → Dashboard
 ```
 
 All components are async, non-blocking, and connected via `asyncio.Queue`.  
@@ -18,9 +18,9 @@ End-to-end latency target: **<1 second** after candle close.
 |-----------|-----------|
 | Backend | Python 3.10+, FastAPI (async) |
 | Database | PostgreSQL + SQLAlchemy (asyncpg) |
-| Data Feed | Zerodha Kite Connect WebSocket |
+| Data Feed | Angel One SmartAPI WebSocket |
 | ML Models | XGBoost + LSTM (PyTorch) ensemble |
-| Dashboard | Streamlit + Plotly |
+| Dashboard | FastAPI + Vanilla JS/HTML (Internal) |
 | Deployment | Docker Compose, AWS EC2 (Ubuntu) |
 
 ## Quick Start
@@ -29,7 +29,7 @@ End-to-end latency target: **<1 second** after candle close.
 
 - Python 3.10+
 - PostgreSQL 15+ (or Docker)
-- Zerodha Kite Connect API credentials
+- Angel One SmartAPI credentials (API Key, Client ID, MPIN, TOTP Secret)
 
 ### 2. Setup
 
@@ -38,7 +38,7 @@ git clone <repo-url>
 cd ai-trading-engine
 pip install -r requirements.txt
 cp .env.example .env
-# Edit .env with your Kite API credentials and DB URL
+# Edit .env with your Angel One API credentials and DB URL
 ```
 
 ### 3. Start PostgreSQL
@@ -47,11 +47,11 @@ cp .env.example .env
 docker compose up -d db
 ```
 
-### 4. Generate Access Token (daily before market open)
+### 4. Generate Access Token (Automated)
 
 ```bash
-python scripts/generate_token.py
-# Follow instructions → login → paste request_token
+# Token generation is fully headless via TOTP. No manual login required.
+# Just ensure your ANGEL_TOTP_SECRET is in .env.
 ```
 
 ### 5. Seed NFO Instruments (daily)
@@ -63,7 +63,7 @@ python scripts/seed_instruments.py
 ### 6. Fetch Historical Data (once, for training)
 
 ```bash
-# From Kite API (last 60 days)
+# From Angel One API (last 60 days)
 python scripts/fetch_historical.py --days 60
 
 # Or from CSV
@@ -86,9 +86,8 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 ### 9. Launch Dashboard
 
-```bash
-streamlit run dashboard/app.py
-```
+The dashboard is served internally by FastAPI. Open your browser:
+**http://127.0.0.1:8000/**
 
 ### 10. Backtest (optional)
 
@@ -114,7 +113,7 @@ python backtesting/backtest.py --interval 5m --days 30 --verbose
 │   ├── main.py              # FastAPI + full pipeline wiring
 │   ├── config.py             # Pydantic settings from .env
 │   ├── core/
-│   │   ├── data_ingest.py    # Zerodha WebSocket + dynamic ATM
+│   │   ├── data_ingest.py    # Angel One WebSocket + dynamic ATM
 │   │   ├── candle_engine.py  # Tick → OHLCV aggregation (5m/15m)
 │   │   ├── feature_engine.py # 15+ technical indicators
 │   │   ├── ml_engine.py      # XGBoost + LSTM ensemble
@@ -128,12 +127,12 @@ python backtesting/backtest.py --interval 5m --days 30 --verbose
 │   └── utils/
 │       └── logger.py         # Structured logging
 ├── scripts/
-│   ├── generate_token.py     # Kite access token helper
+│   ├── generate_token.py     # Angel One TOTP auth helper
 │   ├── seed_instruments.py   # NFO instrument cache
 │   ├── fetch_historical.py   # Historical data loader (API + CSV)
 │   └── train_model.py        # XGBoost + LSTM training pipeline
-├── dashboard/
-│   └── app.py                # Streamlit live dashboard
+├── frontend/
+│   └── index.html            # Real-time WebSocket live dashboard
 ├── backtesting/
 │   └── backtest.py           # Historical replay with P&L tracking
 ├── models/                   # Trained model artifacts (.pkl, .pt)
@@ -174,10 +173,10 @@ python backtesting/backtest.py --interval 5m --days 30 --verbose
    - Start the system
 
 2. **Market hours (9:15 AM – 3:30 PM IST):**
-   - Auto-connects to Zerodha WebSocket
+   - Auto-connects to Angel One WebSocket
    - Candles aggregate at 5m/15m intervals
    - Features computed → ML prediction → signal generation
-   - Monitor via Streamlit dashboard
+   - Monitor via live browser dashboard
 
 3. **Post-market:**
    - Flush remaining candle buffers
