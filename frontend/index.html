@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>AI Trading Intelligence Live</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
     <style>
         body { margin: 0; padding: 0; background-color: #0a0a1a; color: #ccd6f6; font-family: 'Inter', sans-serif; }
         #chart-wrapper { position: relative; width: 100%; height: 55vh; border-bottom: 1px solid #1a1a2e; background-color: #0a0a1a; }
@@ -113,6 +114,10 @@
             wickUpColor: '#00ff88', wickDownColor: '#ff4444'
         });
 
+        // Track the most recent timestamp loaded into the chart
+        // to guard against out-of-order WebSocket updates
+        let lastCandleTime = 0;
+
         // Helper to convert naive string "YYYY-MM-DDTHH:MM:SS" into 
         // a UTC timestamp that makes LightweightCharts display the exact same string
         function toBusinessTime(isoString) {
@@ -138,10 +143,22 @@
                 
                 // Sort ascending by time
                 formattedData.sort((a,b) => a.time - b.time);
-                
+
+                // Remove any duplicate timestamps (keep last occurrence)
+                const deduped = [];
+                const seen = new Set();
+                for (const bar of formattedData) {
+                    seen.add(bar.time);
+                    deduped.push(bar);
+                }
+                // Re-sort after dedup
+                const uniqueBars = [...new Map(deduped.map(b => [b.time, b])).values()]
+                    .sort((a, b) => a.time - b.time);
+
                 // Render chart
-                if (formattedData.length > 0) {
-                    candleSeries.setData(formattedData);
+                if (uniqueBars.length > 0) {
+                    candleSeries.setData(uniqueBars);
+                    lastCandleTime = uniqueBars[uniqueBars.length - 1].time;
                 }
 
                 // Hydrate latest Prediction
@@ -162,10 +179,22 @@
                 }
 
                 // Hydrate latest Signal
+                const SIGNAL_EXPIRY_MS = 30 * 60 * 1000; // 30 minutes
                 function renderSignal(data) {
                     const el = document.getElementById('latest-signal');
-                    if (!data || data.length === 0) return;
+                    if (!data || data.length === 0) {
+                        el.innerHTML = '<span class="neutral">Waiting for signals...</span>';
+                        return;
+                    }
                     const sig = Array.isArray(data) ? data[0] : data;
+
+                    // Check if signal is stale (older than 30 min)
+                    const sigAge = Date.now() - new Date(sig.timestamp).getTime();
+                    if (sigAge > SIGNAL_EXPIRY_MS) {
+                        el.innerHTML = '<span class="neutral">Waiting for signals...</span>';
+                        return;
+                    }
+
                     const dir = sig.direction;
                     const isBull = dir === 'BULLISH';
                     const isBear = dir === 'BEARISH';
@@ -221,13 +250,21 @@
                     
                     if (data.type === 'CANDLE_UPDATE' || data.type === 'CANDLE_CLOSE') {
                         const time = toBusinessTime(data.timestamp);
-                        candleSeries.update({
-                            time: time,
-                            open: data.open,
-                            high: data.high,
-                            low: data.low,
-                            close: data.close
-                        });
+                        // Ignore stale updates — lightweight-charts throws if time <= lastBar
+                        if (time < lastCandleTime) return;
+                        try {
+                            candleSeries.update({
+                                time: time,
+                                open: data.open,
+                                high: data.high,
+                                low: data.low,
+                                close: data.close
+                            });
+                            // Advance our bookmark on a confirmed new bar
+                            if (time > lastCandleTime) lastCandleTime = time;
+                        } catch(e) {
+                            // Silently swallow any remaining race conditions
+                        }
                     }
                     else if (data.type === 'PREDICTION') {
                         renderPrediction(data);

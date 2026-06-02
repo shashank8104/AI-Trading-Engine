@@ -64,10 +64,21 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def init_db() -> None:
-    """Create all tables. Call once at startup."""
+    """Create all tables and migrate schema for new columns."""
+    from sqlalchemy import text
+
     # Import models to register them with Base.metadata
     import app.db.models  # noqa: F401
 
     engine = _get_engine()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Idempotently add new columns (PostgreSQL IF NOT EXISTS)
+        new_columns = [
+            ("features", "supertrend_direction", "FLOAT"),
+            ("features", "bb_pct_b", "FLOAT"),
+        ]
+        for table, col, coltype in new_columns:
+            await conn.execute(
+                text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {coltype}")
+            )

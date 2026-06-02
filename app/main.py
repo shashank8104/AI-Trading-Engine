@@ -135,7 +135,9 @@ async def on_candle_close(candle: dict) -> None:
             await ws_manager.broadcast(pred_data)
 
             atr = features.get("atr_14")
-            signal = await signal_engine.process_prediction(prediction, candle, atr=atr)
+            signal = await signal_engine.process_prediction(
+                prediction, candle, atr=atr, features=features
+            )
 
             if signal:
                 sig_data = {

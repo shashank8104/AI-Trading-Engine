@@ -169,6 +169,16 @@ class FeatureEngine:
         vol_sma = volume.rolling(window=20).mean()
         vol_ratio = volume / vol_sma.replace(0, np.nan)
 
+        # Supertrend (3.0 × ATR multiplier, 14-period)
+        supertrend_dir = FeatureEngine._compute_supertrend(df)
+
+        # BB %B: (close - lower) / (upper - lower) — measures position within BB
+        bb_lower_last = bb.bollinger_lband().iloc[-1]
+        bb_upper_last = bb.bollinger_hband().iloc[-1]
+        close_last = float(close.iloc[-1])
+        bandwidth = bb_upper_last - bb_lower_last if not pd.isna(bb_upper_last) and not pd.isna(bb_lower_last) else 0
+        bb_pct_b = round((close_last - bb_lower_last) / bandwidth, 6) if bandwidth > 0 else None
+
         return {
             "rsi_14": _safe_last(rsi.rsi()),
             "macd": _safe_last(macd.macd()),
@@ -183,9 +193,77 @@ class FeatureEngine:
             "ema_21": _safe_last(ema21.ema_indicator()),
             "volume_sma_ratio": _safe_last(vol_ratio),
             "adx": _safe_last(adx.adx()),
+            "supertrend_direction": supertrend_dir,
+            "bb_pct_b": bb_pct_b,
         }
 
     # ── Options Features ──────────────────────────────────────────
+
+    @staticmethod
+    def _compute_supertrend(
+        df: pd.DataFrame, multiplier: float = 3.0, period: int = 14
+    ) -> float:
+        """
+        Compute Supertrend direction for the latest candle.
+
+        Supertrend = ATR-based dynamic support/resistance. Price above the
+        Supertrend line = bullish (+1.0), below = bearish (-1.0).
+
+        Uses Wilder's smoothed ATR (same as the original indicator).
+        """
+        close = df["close"].values
+        high  = df["high"].values
+        low   = df["low"].values
+        n = len(close)
+
+        if n < period + 1:
+            return 0.0   # Not enough data
+
+        # True Range
+        tr = np.maximum(
+            high[1:] - low[1:],
+            np.maximum(
+                np.abs(high[1:] - close[:-1]),
+                np.abs(low[1:] - close[:-1]),
+            ),
+        )
+        tr = np.concatenate([[high[0] - low[0]], tr])
+
+        # Wilder's smoothed ATR
+        atr = np.zeros(n)
+        atr[period - 1] = np.mean(tr[:period])
+        for i in range(period, n):
+            atr[i] = (atr[i - 1] * (period - 1) + tr[i]) / period
+
+        hl2 = (high + low) / 2.0
+        basic_upper = hl2 + multiplier * atr
+        basic_lower = hl2 - multiplier * atr
+
+        upper     = basic_upper.copy()
+        lower     = basic_lower.copy()
+        direction = np.ones(n)   # +1 = bullish, -1 = bearish
+
+        for i in range(1, n):
+            # Upper band ratchets down only
+            upper[i] = (
+                basic_upper[i]
+                if basic_upper[i] < upper[i - 1] or close[i - 1] > upper[i - 1]
+                else upper[i - 1]
+            )
+            # Lower band ratchets up only
+            lower[i] = (
+                basic_lower[i]
+                if basic_lower[i] > lower[i - 1] or close[i - 1] < lower[i - 1]
+                else lower[i - 1]
+            )
+            # Flip direction on crossover
+            if direction[i - 1] == -1.0:
+                direction[i] = 1.0 if close[i] > upper[i] else -1.0
+            else:
+                direction[i] = -1.0 if close[i] < lower[i] else 1.0
+
+        return float(direction[-1])
+
 
     def _compute_options_features(self, candle: dict) -> dict:
         """Compute options-derived features from tracked OI data."""

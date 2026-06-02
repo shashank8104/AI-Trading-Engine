@@ -94,6 +94,10 @@ class Feature(Base):
     body_wick_ratio = Column(Float)
     gap_pct = Column(Float)
 
+    # Confluence scoring features (new strategy)
+    supertrend_direction = Column(Float)   # +1.0 = bullish, -1.0 = bearish
+    bb_pct_b = Column(Float)               # (close - lower) / (upper - lower), 0-1
+
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships
